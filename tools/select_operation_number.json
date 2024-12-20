@@ -1,0 +1,17 @@
+{
+  "type": "function",
+  "function": {
+    "name": "select_operation_number",
+    "description": "Select the number of the most relevant operation from the given ones.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "number",
+          "description": "The selected number."
+        }
+      },
+      "required": ["number"]
+    }
+  }
+}

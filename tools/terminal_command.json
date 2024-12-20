@@ -1,0 +1,17 @@
+{
+    "type": "function",
+    "function": {
+        "name": "terminal_command",
+        "description": "Execute any linux zsh terminal command",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The whole terminal command to be executed."
+                }
+            },
+            "required": ["command"]
+        }
+    }
+}
