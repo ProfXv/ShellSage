@@ -36,10 +36,15 @@ append_to_conversation() {
         esac
     done
     case "$SERVICE" in
-        ZHIPU)
+        DEEPSEEK|ZHIPU)
             if [ -n "$content" ]; then
-                jq -nc --arg role $role --arg content "$content" '{$role, $content}' \
-                    >> $CONVERSATION_FILE
+                if [ "$role" = "tool" ]; then
+                    jq -nc --arg role $role --arg tool_call_id "$tool_call_id" --arg content "$content" '{$role, $tool_call_id, $content}' \
+                        >> $CONVERSATION_FILE
+                else
+                    jq -nc --arg role $role --arg content "$content" '{$role, $content}' \
+                        >> $CONVERSATION_FILE
+                fi
             fi
             if [ -n "$tool_calls" ]; then
                 jq -nc --arg role $role --argjson tool_calls "$tool_calls" '{$role, $tool_calls}' \
@@ -110,7 +115,7 @@ execute_conversation() {
                 {
                     tool_calls=$(echo -E $delta | jq -r '.tool_calls // empty')
                     if [ -n "$tool_calls" ]; then
-                        FUNCTION=$(echo -E $tool_calls | jq -r '.[0].function')
+                        echo -E $tool_calls >> /tmp/tool_calls.json
                     fi
                 }
 
@@ -130,6 +135,23 @@ execute_conversation() {
     echo "\033[33mUsage: $in_tokens + $out_tokens = $total_tokens\033[0m" >&2
     echo "\033[32m[DONE]\033[0m" >&2
     RESPONSE_STATE=false
+    if [ -n "$tool_calls" ]; then
+        tool_calls=$(jq -s '
+          reduce .[] as $item ([];
+            if length == 0 then
+              $item
+            elif $item[0].function.arguments != "" then
+              .[0].function.arguments += $item[0].function.arguments
+            else
+              .
+            end
+          )
+          ' /tmp/tool_calls.json)
+        FUNCTION=$(echo -E $tool_calls | jq -r '.[0].function')
+        tool_call_id=$(echo -E $tool_calls | jq -r '.[0].id')
+        echo $tool_calls $FUNCTION
+        rm /tmp/tool_calls.json
+    fi
     append_to_conversation -r assistant -c "$(< $RESPONSE_FILE)" -t "$tool_calls"
     rm $RESPONSE_FILE
     unset tool_calls
