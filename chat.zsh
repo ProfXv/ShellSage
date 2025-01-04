@@ -37,14 +37,12 @@ append_to_conversation() {
     done
     case "$SERVICE" in
         DEEPSEEK|ZHIPU)
-            if [ -n "$content" ]; then
-                if [ "$role" = "tool" ]; then
-                    jq -nc --arg role $role --arg tool_call_id "$tool_call_id" --arg content "$content" '{$role, $tool_call_id, $content}' \
-                        >> $CONVERSATION_FILE
-                else
-                    jq -nc --arg role $role --arg content "$content" '{$role, $content}' \
-                        >> $CONVERSATION_FILE
-                fi
+            if [ "$role" = "tool" ]; then
+                jq -nc --arg role $role --arg tool_call_id "$tool_call_id" --arg content "$content" '{$role, $tool_call_id, $content}' \
+                    >> $CONVERSATION_FILE
+            elif [ -n "$content" ]; then
+                jq -nc --arg role $role --arg content "$content" '{$role, $content}' \
+                    >> $CONVERSATION_FILE
             fi
             if [ -n "$tool_calls" ]; then
                 jq -nc --arg role $role --argjson tool_calls "$tool_calls" '{$role, $tool_calls}' \
@@ -149,7 +147,6 @@ execute_conversation() {
           ' /tmp/tool_calls.json)
         FUNCTION=$(echo -E $tool_calls | jq -r '.[0].function')
         tool_call_id=$(echo -E $tool_calls | jq -r '.[0].id')
-        echo $tool_calls $FUNCTION
         rm /tmp/tool_calls.json
     fi
     append_to_conversation -r assistant -c "$(< $RESPONSE_FILE)" -t "$tool_calls"
