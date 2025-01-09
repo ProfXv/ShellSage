@@ -108,16 +108,13 @@ execute_conversation() {
             elif echo $line | grep -q ^data; then
                 line=$(echo -E $line | sed -u 's/^data: //')
                 if [ "$line" = "[DONE]" ]; then continue; fi
-                delta=$(echo -E $line | jq -r '.choices[0].delta')
-                echo -E $delta | jq -rje '.content // empty' | tee -a $RESPONSE_FILE ||
+                delta=$(echo -E $line | jq '.choices[0].delta')
+                echo -E $delta | jq -je '.content // empty' | tee -a $RESPONSE_FILE ||
                 {
-                    tool_calls=$(echo -E $delta | jq -r '.tool_calls // empty')
-                    name=$(echo -E "$tool_calls" | jq -rje '.[0].function.name // empty | . + " "')
-                    printf "\033[31m$name\033[0m" >&2
-                    echo -E $tool_calls | jq -rje '.[0].function.arguments' >&2
-                    if [ -n "$tool_calls" ]; then
-                        echo -E $tool_calls >> /tmp/tool_calls.json
-                    fi
+                    tool_calls=$(echo -E $delta | jq '.tool_calls' | tee -a /tmp/tool_calls.json)
+                    name=$(echo -E "$tool_calls" | jq -rj '.[0].function.name // empty | . + " "')
+                    if [ -n "$name" ]; then printf "\n\033[31m$name\033[0m" >&2; fi
+                    echo -E $tool_calls | jq -rj '.[0].function.arguments' >&2
                 }
 
                 finish_reason=$(echo -E $line | jq -r '.choices[0].finish_reason // empty')
@@ -153,7 +150,7 @@ execute_conversation() {
             end
           )
           ' /tmp/tool_calls.json)
-        FUNCTION=$(echo -E $tool_calls | jq -r '.[0].function')
+        FUNCTION=$(echo -E $tool_calls | jq '.[0].function')
         tool_call_id=$(echo -E $tool_calls | jq -r '.[0].id')
         rm /tmp/tool_calls.json
     fi
