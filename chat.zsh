@@ -128,10 +128,15 @@ execute_conversation() {
                 echo $line
             fi
         done
-    echo \\n
-    echo "\033[34mFinish reason: $finish_reason\033[0m" >&2
-    echo "\033[33mUsage: $in_tokens + $out_tokens = $total_tokens\033[0m" >&2
-    echo "\033[32m[DONE]\033[0m" >&2
+    if [ -z "$line" ]; then
+        echo \\n
+        echo "\033[34mFinish reason: $finish_reason\033[0m" >&2
+        echo "\033[33mUsage: $in_tokens + $out_tokens = $total_tokens\033[0m" >&2
+        echo "\033[32m[DONE]\033[0m" >&2
+    else
+        echo $line | jq
+        echo -e "\n" >> /tmp/conversation_log
+    fi
     RESPONSE_STATE=false
     if [ -n "$tool_calls" ]; then
         tool_calls=$(jq -s '
@@ -161,12 +166,10 @@ handle_conversation() {
     echo
     if [[ -n $FUNCTION ]]; then
         name=$(echo -E $FUNCTION | jq -r '.name')
-        call=$(echo -E $FUNCTION | jq -r '.arguments | fromjson')
+        call=$(echo -E $FUNCTION | jq -r '.arguments')
         case $name in
             terminal_command)
-                command=$(echo -E $call | jq -r '.command')
-                echo "\033[31mExecute:\033[0m" >&2
-                BUFFER="$command"
+                BUFFER=$(echo -E $call | jq -sr '.[] | .command')
                 ;;
             file_operations)
                 operation=$(echo -E $call | jq -r '.operation')
@@ -204,18 +207,27 @@ natural_language_widget() {
         else
             zle -M "No available query since last reply." # could be intelligent reminders later
         fi
+        MANUAL=false
     elif ! type ${BUFFER%% *} &>/dev/null; then
         append_to_conversation -r user -c "$BUFFER"
         handle_conversation
+        MANUAL=false
     else
         zle accept-line
         RESPONSE_STATE=true
+        MANUAL=true
     fi
 }
 
 precmd() {
     if $RESPONSE_STATE; then
-        append_to_conversation -r tool -c "`kitty @ get-text --extent last_cmd_output`"
+        result=`kitty @ get-text --extent last_cmd_output`
+        if $MANUAL; then
+            result=`jq -nc --arg in "$(fc -ln -1)" --arg out "$result" '{$in, $out}'`
+            append_to_conversation -r user -c "$result"
+        else
+            append_to_conversation -r tool -c "$result"
+        fi
         if [[ -n $FUNCTION ]]; then
             kitten @ send-key Return
             unset FUNCTION
