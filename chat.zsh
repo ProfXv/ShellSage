@@ -112,6 +112,9 @@ execute_conversation() {
                 echo -E $delta | jq -rje '.content // empty' | tee -a $RESPONSE_FILE ||
                 {
                     tool_calls=$(echo -E $delta | jq -r '.tool_calls // empty')
+                    name=$(echo -E "$tool_calls" | jq -rje '.[0].function.name // empty | . + " "')
+                    printf "\033[31m$name\033[0m" >&2
+                    echo -E $tool_calls | jq -rje '.[0].function.arguments' >&2
                     if [ -n "$tool_calls" ]; then
                         echo -E $tool_calls >> /tmp/tool_calls.json
                     fi
