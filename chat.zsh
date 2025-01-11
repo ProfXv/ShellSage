@@ -125,7 +125,7 @@ execute_conversation() {
                     total_tokens=$(echo $usage | jq -r '.total_tokens')
                 fi
             else
-                echo $line
+                echo -ne "\n$line"
             fi
         done
     if [ -z "$line" ]; then
@@ -236,7 +236,9 @@ precmd() {
 }
 
 # 定义文件名常量
-CONVERSATION_FILE=/tmp/conversations/`date +%s`.jsonl
+CONVERSATION_HOME=$PROJECT_HOME/Documents/conversations
+mkdir -p $CONVERSATION_HOME
+CONVERSATION_FILE=$CONVERSATION_HOME/`date +%s`.jsonl
 RESPONSE_FILE=/tmp/response.md
 RESPONSE_STATE=false
 
@@ -258,13 +260,6 @@ zle -N check_conversation
 # 暂时抑制这个功能，因为发现跟划词生成存在冲突。
 # 以及M字母同样被上面征用到同一功能。
 # bindkey '^M' check_conversation
-
-save_conversation() {
-    cp $CONVERSATION_FILE ~/Documents/conversations
-    zle -M "The conversation has been saved successfully."
-}
-zle -N save_conversation
-bindkey '^[e' save_conversation
 
 back_conversation() {
     sed -i '$ d' $CONVERSATION_FILE 
