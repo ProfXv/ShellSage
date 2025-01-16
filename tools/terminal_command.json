@@ -2,7 +2,7 @@
     "type": "function",
     "function": {
         "name": "terminal_command",
-        "description": "Execute any linux zsh terminal command",
+        "description": "Execute a linux zsh terminal command; Return input, output and exit code",
         "parameters": {
             "type": "object",
             "properties": {

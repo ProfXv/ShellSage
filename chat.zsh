@@ -220,14 +220,13 @@ natural_language_widget() {
 }
 
 precmd() {
+    code=$?
+    local role=tool
     if $RESPONSE_STATE; then
         result=`kitty @ get-text --extent last_cmd_output`
-        if $MANUAL; then
-            result=`jq -nc --arg in "$(fc -ln -1)" --arg out "$result" '{$in, $out}'`
-            append_to_conversation -r user -c "$result"
-        else
-            append_to_conversation -r tool -c "$result"
-        fi
+        result=`jq -nc --arg in "$(fc -ln -1)" --arg out "$result" --arg code "$code" '{$in, $out, $code}'`
+        if $MANUAL; then role=user; fi
+        append_to_conversation -r $role -c "$result"
         if [[ -n $FUNCTION ]]; then
             kitten @ send-key Return
             unset FUNCTION
