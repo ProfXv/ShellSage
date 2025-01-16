@@ -101,7 +101,7 @@ send_request() {
 }
 
 execute_conversation() {
-    send_request -t "terminal_command" -s | tee -a /tmp/conversation_log |
+    send_request -t "terminal_command" -s | tee -a $TMP/conversation_log |
         while read -r line; do
             if [ -z "$line" ]; then
                 continue
@@ -111,7 +111,7 @@ execute_conversation() {
                 delta=$(echo -E $line | jq '.choices[0].delta')
                 echo -E $delta | jq -je '.content // empty' | tee -a $RESPONSE_FILE ||
                 {
-                    tool_calls=$(echo -E $delta | jq '.tool_calls' | tee -a /tmp/tool_calls.json)
+                    tool_calls=$(echo -E $delta | jq '.tool_calls' | tee -a $TMP/tool_calls.json)
                     name=$(echo -E "$tool_calls" | jq -rj '.[0].function.name // empty | . + " "')
                     if [ -n "$name" ]; then printf "\n\033[31m$name\033[0m" >&2; fi
                     echo -E $tool_calls | jq -rj '.[0].function.arguments' >&2
@@ -135,7 +135,7 @@ execute_conversation() {
         echo "\033[32m[DONE]\033[0m" >&2
     else
         echo $line | jq
-        echo -e "\n" >> /tmp/conversation_log
+        echo -e "\n" >> $TMP/conversation_log
     fi
     RESPONSE_STATE=false
     if [ -n "$tool_calls" ]; then
@@ -149,10 +149,10 @@ execute_conversation() {
               .
             end
           )
-          ' /tmp/tool_calls.json)
+          ' $TMP/tool_calls.json)
         FUNCTION=$(echo -E $tool_calls | jq '.[0].function')
         tool_call_id=$(echo -E $tool_calls | jq -r '.[0].id')
-        rm /tmp/tool_calls.json
+        rm $TMP/tool_calls.json
     fi
     append_to_conversation -r assistant -c "$(< $RESPONSE_FILE)" -t "$tool_calls"
     rm $RESPONSE_FILE
@@ -238,9 +238,10 @@ precmd() {
 # 定义文件名常量
 [ -z "$PROJECT_HOME" ] && PROJECT_HOME=$HOME
 CONVERSATION_HOME=$PROJECT_HOME/Documents/conversations
-mkdir -p $CONVERSATION_HOME
+TMP=/tmp/conversations/`date +%s`
+mkdir -p $CONVERSATION_HOME $TMP
 CONVERSATION_FILE=$CONVERSATION_HOME/`date +%s`.jsonl
-RESPONSE_FILE=/tmp/response.md
+RESPONSE_FILE=$TMP/response.md
 RESPONSE_STATE=false
 
 append_to_conversation -r system -c "$(< ~/.chat/system.md)"
