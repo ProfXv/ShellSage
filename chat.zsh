@@ -243,8 +243,7 @@ CONVERSATION_FILE=$CONVERSATION_HOME/`date +%s`.jsonl
 RESPONSE_FILE=/tmp/response.md
 RESPONSE_STATE=false
 
-mkdir -p /tmp/conversations
-append_to_conversation -r system -c "$(< ~/.chat/system.txt)"
+append_to_conversation -r system -c "$(< ~/.chat/system.md)"
 
 zle -N natural_language_widget
 bindkey '^M' natural_language_widget
