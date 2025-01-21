@@ -1,5 +1,24 @@
+# Service configuration:
+# - Assume multiple model services are pre-configured with environment variables
+#   (e.g., in initialization scripts or shell profiles)
+# - Each service has two variables:
+#   - ${SERVICE}_MODEL_URL: Model API endpoint
+#   - ${SERVICE}_API_KEY:  API key
+# - Model name is configured independently as MODEL_NAME
+# - The default service is already set in environment variables
+# - To switch services, set SERVICE variable to desired service name
+# Example configuration (could be in .bashrc/.zshrc or other init scripts):
+# export OPENAI_MODEL_URL="https://api.openai.com/v1"
+# export OPENAI_API_KEY="sk-xxxxxx"
+# export DEEPSEEK_MODEL_URL="https://api.deepseek.com/v1"
+# export DEEPSEEK_API_KEY="ds-xxxxxx"
+# export SERVICE=DEEPSEEK  # Switch to DeepSeek service
+# export MODEL_NAME=deepseek-chat  # Set model name independently
+
 MODEL_URL=`eval echo \$"$SERVICE"_MODEL_URL`
 API_KEY=`eval echo \$"$SERVICE"_API_KEY`
+
+setopt pipefail
 
 append_to_conversation() {
     local role=""
