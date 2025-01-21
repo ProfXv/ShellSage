@@ -142,6 +142,9 @@ execute_conversation() {
                     in_tokens=$(echo $usage | jq -r '.prompt_tokens')
                     out_tokens=$(echo $usage | jq -r '.completion_tokens')
                     total_tokens=$(echo $usage | jq -r '.total_tokens')
+                    ACC_IN_TOKENS=$((ACC_IN_TOKENS + in_tokens))
+                    ACC_OUT_TOKENS=$((ACC_OUT_TOKENS + out_tokens))
+                    ACC_TOTAL_TOKENS=$((ACC_TOTAL_TOKENS + total_tokens))
                 fi
             else
                 echo -ne "\n$line"
@@ -150,7 +153,9 @@ execute_conversation() {
     if [ -z "$line" ]; then
         echo \\n
         echo "\033[34mFinish reason: $finish_reason\033[0m" >&2
-        echo "\033[33mUsage: $in_tokens + $out_tokens = $total_tokens\033[0m" >&2
+        echo "\033[33m          \tIn\tOut\tTotal\033[0m" >&2
+        echo "\033[33mTurn Usage\t$in_tokens\t$out_tokens\t$total_tokens\033[0m" >&2
+        echo "\033[33mAcc. Usage\t$ACC_IN_TOKENS\t$ACC_OUT_TOKENS\t$ACC_TOTAL_TOKENS\033[0m" >&2
         echo "\033[32m[DONE]\033[0m" >&2
     else
         echo $line | jq
