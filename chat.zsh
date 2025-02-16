@@ -4,19 +4,21 @@
 # - Each service has two variables:
 #   - ${SERVICE}_MODEL_URL: Model API endpoint
 #   - ${SERVICE}_API_KEY:  API key
-# - Model name is configured independently as MODEL_NAME
-# - The default service is already set in environment variables
-# - To switch services, set SERVICE variable to desired service name
+# - SERVICE variable defines which service to use
+# - MODEL_NAME variable defines which model to use
 # Example configuration (could be in .bashrc/.zshrc or other init scripts):
-# export OPENAI_MODEL_URL="https://api.openai.com/v1"
-# export OPENAI_API_KEY="sk-xxxxxx"
-# export DEEPSEEK_MODEL_URL="https://api.deepseek.com/v1"
-# export DEEPSEEK_API_KEY="ds-xxxxxx"
-# export SERVICE=DEEPSEEK  # Switch to DeepSeek service
-# export MODEL_NAME=deepseek-chat  # Set model name independently
+# OPENAI_MODEL_URL="https://api.openai.com/v1"
+# OPENAI_API_KEY="sk-xxxxxx"
+# DEEPSEEK_MODEL_URL="https://api.deepseek.com/v1"
+# DEEPSEEK_API_KEY="ds-xxxxxx"
+# SERVICE=DEEPSEEK  # Switch to DeepSeek service
+# MODEL_NAME=deepseek-chat  # Set model name
 
+SERVICE=DEEPSEEK
 MODEL_URL=`eval echo \$"$SERVICE"_MODEL_URL`
 API_KEY=`eval echo \$"$SERVICE"_API_KEY`
+MODEL_NAME=deepseek-reasoner
+MODEL_NAME=deepseek-chat
 
 setopt pipefail
 
@@ -107,10 +109,8 @@ send_request() {
         {
             model: $model_name,
             messages: $messages,
-            tools: $tools,
-            tool_choice: "auto",
             stream: $stream
-        }'
+        } + if $tools != [] then {tools: $tools, tool_choice: "auto"} else {} end'
     )
     # 发送请求
     curl --no-buffer -s $MODEL_URL \
@@ -120,22 +120,34 @@ send_request() {
 }
 
 execute_conversation() {
-    send_request -t "terminal_command" -s | tee -a $TMP/conversation_log |
-        while read -r line; do
+    {
+        [ "$MODEL_NAME" = "deepseek-reasoner" ] &&
+        send_request -s || send_request -t "terminal_command" -s
+    } | tee -a $TMP/conversation_log | while read -r line; do
             if [ -z "$line" ]; then
                 continue
             elif echo $line | grep -q ^data; then
                 line=$(echo -E $line | sed -u 's/^data: //')
                 if [ "$line" = "[DONE]" ]; then continue; fi
                 delta=$(echo -E $line | jq '.choices[0].delta')
-                echo -E $delta | jq -je '.content // empty' | tee -a $RESPONSE_FILE ||
+                {
+                    echo -E $delta | jq -je '.content // empty' > /dev/null &&
+                    { [ "$reasoning" = 1 ] && echo '\n\n' || true } && reasoning=0 &&
+                    echo -E $delta | jq -je '.content // empty' |
+                    tee -a $RESPONSE_FILE | sed 's/.*/\x1b[36m&\x1b[0m/'
+                } ||
+                {
+                    echo -E $delta | jq -je '.reasoning_content // empty' > /dev/null &&
+                    { [ "$reasoning" = 0 ] && echo '\n\n' || true } && reasoning=1 &&
+                    echo -E $delta | jq -je '.reasoning_content // empty' |
+                    tee -a $REASONING_RESPONSE_FILE | sed 's/.*/\x1b[34m&\x1b[0m/'
+                } ||
                 {
                     tool_calls=$(echo -E $delta | jq '.tool_calls' | tee -a $TMP/tool_calls.json)
                     name=$(echo -E "$tool_calls" | jq -rj '.[0].function.name // empty | . + " "')
                     if [ -n "$name" ]; then printf "\n\033[31m$name\033[0m" >&2; fi
                     echo -E $tool_calls | jq -rj '.[0].function.arguments' >&2
                 }
-
                 finish_reason=$(echo -E $line | jq -r '.choices[0].finish_reason // empty')
                 usage=$(echo -E $line | jq -r '.usage // empty')
                 if [ -n "$usage" ]; then
@@ -150,37 +162,40 @@ execute_conversation() {
                 echo -ne "\n$line"
             fi
         done
-    if [ -z "$line" ]; then
-        echo \\n
-        echo "\033[34mFinish reason: $finish_reason\033[0m" >&2
-        echo "\033[33m          \tIn\tOut\tTotal\033[0m" >&2
-        echo "\033[33mTurn Usage\t$in_tokens\t$out_tokens\t$total_tokens\033[0m" >&2
-        echo "\033[33mAcc. Usage\t$ACC_IN_TOKENS\t$ACC_OUT_TOKENS\t$ACC_TOTAL_TOKENS\033[0m" >&2
-        echo "\033[32m[DONE]\033[0m" >&2
-    else
+    if [ -n "$line" ]; then
         echo $line | jq
         echo -e "\n" >> $TMP/conversation_log
     fi
-    RESPONSE_STATE=false
     if [ -n "$tool_calls" ]; then
         tool_calls=$(jq -s '
-          reduce .[] as $item ([];
+            reduce .[] as $item ([];
             if length == 0 then
-              $item
+                $item
             elif $item[0].function.arguments != "" then
-              .[0].function.arguments += $item[0].function.arguments
+                .[0].function.arguments += $item[0].function.arguments
             else
-              .
+                .
             end
-          )
-          ' $TMP/tool_calls.json)
+        )
+        ' $TMP/tool_calls.json)
         FUNCTION=$(echo -E $tool_calls | jq '.[0].function')
         tool_call_id=$(echo -E $tool_calls | jq -r '.[0].id')
         rm $TMP/tool_calls.json
     fi
-    append_to_conversation -r assistant -c "$(< $RESPONSE_FILE)" -t "$tool_calls"
-    rm $RESPONSE_FILE
-    unset tool_calls
+    echo \\n
+    if [ -f $RESPONSE_FILE ]; then
+        echo "\033[32m[DONE]\033[0m" >&2
+        echo "\033[35mFinish reason: $finish_reason\033[0m" >&2
+        echo "\033[33m          \tIn\tOut\tTotal\033[0m" >&2
+        echo "\033[33mTurn Usage\t$in_tokens\t$out_tokens\t$total_tokens\033[0m" >&2
+        echo "\033[33mAcc. Usage\t$ACC_IN_TOKENS\t$ACC_OUT_TOKENS\t$ACC_TOTAL_TOKENS\033[0m" >&2
+        append_to_conversation -r assistant -c "$(< $RESPONSE_FILE)" -t "$tool_calls"
+        rm $RESPONSE_FILE
+        RESPONSE_STATE=false
+    else
+        echo "\033[31m[BROKEN]\033[0m" >&2
+    fi
+    unset reasoning tool_calls
 }
 
 handle_conversation() {
@@ -227,19 +242,31 @@ handle_conversation() {
 natural_language_widget() {
     if [[ -z $BUFFER ]]; then
         if $RESPONSE_STATE; then
+            if [[ -n $FUNCTION ]]; then
+                role=tool
+                unset FUNCTION
+            else
+                role=user
+            fi
+            if [ -f $COMMAND_HISTORY_FILE ]; then
+                command_history=`cat $COMMAND_HISTORY_FILE`
+                rm $COMMAND_HISTORY_FILE
+            fi
+            append_to_conversation -r $role -c "$command_history"
             handle_conversation
         else
             zle -M "No available query since last reply." # could be intelligent reminders later
         fi
-        MANUAL=false
     elif ! type ${BUFFER%% *} &>/dev/null; then
-        append_to_conversation -r user -c "$BUFFER"
+        if [ -f $COMMAND_HISTORY_FILE ]; then
+            command_history=`cat $COMMAND_HISTORY_FILE`
+            rm $COMMAND_HISTORY_FILE
+        fi
+        append_to_conversation -r user -c "$command_history $BUFFER"
         handle_conversation
-        MANUAL=false
     else
         zle accept-line
         RESPONSE_STATE=true
-        MANUAL=true
     fi
 }
 
@@ -248,12 +275,10 @@ precmd() {
     local role=tool
     if $RESPONSE_STATE; then
         result=`kitty @ get-text --extent last_cmd_output`
-        result=`jq -nc --arg in "$(fc -ln -1)" --arg out "$result" --arg code "$code" '{$in, $out, $code}'`
-        if $MANUAL; then role=user; fi
-        append_to_conversation -r $role -c "$result"
+        result=`jq -nc --arg pwd "$(pwd)" --arg in "$(fc -ln -1)" --arg out "$result" --arg code "$code" '{$pwd, $in, $out, $code}'`
+        echo $result >> $COMMAND_HISTORY_FILE
         if [[ -n $FUNCTION ]]; then
             kitten @ send-key Return
-            unset FUNCTION
         fi
     fi
 }
@@ -265,6 +290,8 @@ TMP=/tmp/conversations/`date +%s`
 mkdir -p $CONVERSATION_HOME $TMP
 CONVERSATION_FILE=$CONVERSATION_HOME/`date +%s`.jsonl
 RESPONSE_FILE=$TMP/response.md
+REASONING_RESPONSE_FILE=$TMP/reasoning_response.md
+COMMAND_HISTORY_FILE=$TMP/command_history.jsonl
 RESPONSE_STATE=false
 
 append_to_conversation -r system -c "$(< ~/.chat/system.md)"
