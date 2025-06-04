@@ -280,8 +280,7 @@ precmd() {
 }
 
 # 定义文件名常量
-[ -z "$PROJECT_HOME" ] && PROJECT_HOME=$HOME
-CONVERSATION_HOME=$PROJECT_HOME/Documents/conversations
+CONVERSATION_HOME=~/Documents/conversations
 TMP=/tmp/conversations/`date +%s`
 mkdir -p $CONVERSATION_HOME $TMP
 CONVERSATION_FILE=$CONVERSATION_HOME/`date +%s`.jsonl
