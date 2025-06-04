@@ -18,7 +18,6 @@ SERVICE=DEEPSEEK
 MODEL_URL=`eval echo \$"$SERVICE"_MODEL_URL`
 API_KEY=`eval echo \$"$SERVICE"_API_KEY`
 MODEL_NAME=deepseek-reasoner
-MODEL_NAME=deepseek-chat
 
 setopt pipefail
 
@@ -120,10 +119,7 @@ send_request() {
 }
 
 execute_conversation() {
-    {
-        [ "$MODEL_NAME" = "deepseek-reasoner" ] &&
-        send_request -s || send_request -t "terminal_command" -s
-    } | tee -a $TMP/conversation_log | while read -r line; do
+    send_request -t "terminal_command" -s | tee -a $TMP/conversation_log | while read -r line; do
             if [ -z "$line" ]; then
                 continue
             elif echo $line | grep -q ^data; then
