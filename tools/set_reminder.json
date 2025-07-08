@@ -1,0 +1,21 @@
+{
+    "type": "function",
+    "function": {
+        "name": "set_reminder",
+        "description": "Set a reminder using the 'at' command. The 'time' parameter should be in a format acceptable to the 'at' command (e.g., 'now + 1 minute', '10:30 PM tomorrow'). The reminder will be sent as a desktop notification.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "time": {
+                    "type": "string",
+                    "description": "The time to set the reminder, in a format compatible with the 'at' command."
+                },
+                "message": {
+                    "type": "string",
+                    "description": "The message for the reminder."
+                }
+            },
+            "required": ["time", "message"]
+        }
+    }
+}
