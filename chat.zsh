@@ -96,7 +96,7 @@ send_request() {
         esac
     done
     # 生成工具的 JSON 数组
-    tools=$(printf "%s\n" "${tools_list[@]}" | xargs -I {} cat ~/.chat/tools/{}.json | jq -s '.')
+    tools=$(printf "%s\n" "${tools_list[@]}" | xargs -I {} cat $SCRIPT_DIR/tools/{}.json | jq -s '.')
     # 读取对话文件内容
     messages=$(jq -s '.' "$CONVERSATION_FILE")
     # 构造请求体的各个部分
@@ -280,6 +280,7 @@ precmd() {
 }
 
 # 定义文件名常量
+SCRIPT_DIR=$(dirname "${(%):-%x}")
 CONVERSATION_HOME=~/Documents/conversations
 TMP=/tmp/conversations/`date +%s`
 mkdir -p $CONVERSATION_HOME $TMP
@@ -289,7 +290,7 @@ REASONING_RESPONSE_FILE=$TMP/reasoning_response.md
 COMMAND_HISTORY_FILE=$TMP/command_history.jsonl
 RESPONSE_STATE=false
 
-append_to_conversation -r system -c "$(< ~/.chat/system.md)"
+append_to_conversation -r system -c "$(< $SCRIPT_DIR/system.md)"
 
 zle -N natural_language_widget
 bindkey '^M' natural_language_widget
