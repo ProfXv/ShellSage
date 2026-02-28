@@ -14,10 +14,8 @@
 # SERVICE=DEEPSEEK  # Switch to DeepSeek service
 # MODEL_NAME=deepseek-chat  # Set model name
 
-SERVICE=DEEPSEEK
 MODEL_URL=`eval echo \$"$SERVICE"_MODEL_URL`
 API_KEY=`eval echo \$"$SERVICE"_API_KEY`
-MODEL_NAME=deepseek-reasoner
 
 setopt pipefail
 
@@ -119,7 +117,7 @@ send_request() {
 }
 
 execute_conversation() {
-    send_request -t "terminal_command" -s | tee -a $TMP/conversation_log | while read -r line; do
+    send_request -t "terminal_command" -s | tee -a $RUN/conversation_log | while read -r line; do
             if [ -z "$line" ]; then
                 continue
             elif echo $line | grep -q ^data; then
@@ -139,7 +137,7 @@ execute_conversation() {
                     tee -a $REASONING_RESPONSE_FILE | sed 's/.*/\x1b[34m&\x1b[0m/'
                 } ||
                 {
-                    tool_calls=$(echo -E $delta | jq '.tool_calls' | tee -a $TMP/tool_calls.json)
+                    tool_calls=$(echo -E $delta | jq '.tool_calls' | tee -a $RUN/tool_calls.json)
                     name=$(echo -E "$tool_calls" | jq -rj '.[0].function.name // empty | . + " "')
                     if [ -n "$name" ]; then printf "\n\033[31m$name\033[0m" >&2; fi
                     echo -E $tool_calls | jq -rj '.[0].function.arguments' >&2
@@ -160,7 +158,7 @@ execute_conversation() {
         done
     if [ -n "$line" ]; then
         echo $line | jq
-        echo -e "\n" >> $TMP/conversation_log
+        echo -e "\n" >> $RUN/conversation_log
     fi
     if [ -n "$tool_calls" ]; then
         tool_calls=$(jq -s '
@@ -173,10 +171,10 @@ execute_conversation() {
                 .
             end
         )
-        ' $TMP/tool_calls.json)
+        ' $RUN/tool_calls.json)
         FUNCTION=$(echo -E $tool_calls | jq '.[0].function')
         tool_call_id=$(echo -E $tool_calls | jq -r '.[0].id')
-        rm $TMP/tool_calls.json
+        rm $RUN/tool_calls.json
     fi
     echo \\n
     if [ -f $RESPONSE_FILE ]; then
@@ -266,47 +264,72 @@ natural_language_widget() {
     fi
 }
 
-precmd() {
-    code=$?
-    local role=tool
-    if $RESPONSE_STATE; then
-        result=`kitty @ get-text --extent last_cmd_output`
-        result=`jq -nc --arg pwd "$(pwd)" --arg in "$(fc -ln -1)" --arg out "$result" --arg code "$code" '{$pwd, $in, $out, $code}'`
-        echo $result >> $COMMAND_HISTORY_FILE
-        if [[ -n $FUNCTION ]]; then
-            kitten @ send-key Return
-        fi
-    fi
+clean_terminal_output() {
+    sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g
+         s/\x1b\][^\x07]*\x07//g
+         s/\x1b\][^\x1b]*\x1b\\//g
+         s/\r//g
+         s/^%[[:space:]]*$//g'
 }
 
-# 定义文件名常量
+preexec() {
+    [[ -n $TMUX ]] && TMUX_ABS=$((`tmux display-message -p '#{history_size}+#{cursor_y}'`))
+    [[ -f $LOG ]] && LOG_OFFSET=`stat --format=%s "$LOG"`
+}
+
+precmd() {
+    code=$?; $RESPONSE_STATE || return; result=""
+    if [[ -n $KITTY_PID ]]; then
+        result=`kitty @ get-text --extent last_cmd_output`
+    elif [[ -n $TMUX ]]; then
+        local h2=`tmux display-message -p '#{history_size}'`
+        local c2=`tmux display-message -p '#{cursor_y}'`
+        result=`tmux capture-pane -p -S $((TMUX_ABS - h2)) -E $((c2 - 1))`
+    elif [[ -f $LOG ]]; then
+        local raw=$(tail -c $((`stat --format=%s "$LOG"` - ${LOG_OFFSET:-0})) "$LOG")
+        [[ $raw != *$'\x1b[?1049h'* ]] && result=`echo "$raw" | clean_terminal_output`
+    fi
+    result=`jq -nc \
+        --arg pwd "$(pwd)" \
+        --arg in "$(fc -ln -1)" \
+        --arg out "$result" \
+        --arg code "$code" \
+        '{$pwd, $in, $out, $code}'`
+    echo $result >> $COMMAND_HISTORY_FILE
+    [[ -n $FUNCTION ]] && AUTO_CONTINUE=true
+}
+
+auto_continue_widget() {
+    $AUTO_CONTINUE && zle natural_language_widget; AUTO_CONTINUE=false
+}
+zle -N zle-line-init auto_continue_widget
+
 SCRIPT_DIR=$(dirname "${(%):-%x}")
 CONVERSATION_HOME=~/Documents/conversations
-TMP=/tmp/conversations/`date +%s`
-mkdir -p $CONVERSATION_HOME $TMP
+RUN=$XDG_RUNTIME_DIR/$PPID
+[[ `ps -o comm= -p $PPID` == script ]] && LOG=`ps -o args= -p $PPID | awk '{print $NF}'`
+mkdir -p $CONVERSATION_HOME $RUN
 CONVERSATION_FILE=$CONVERSATION_HOME/`date +%s`.jsonl
-RESPONSE_FILE=$TMP/response.md
-REASONING_RESPONSE_FILE=$TMP/reasoning_response.md
-COMMAND_HISTORY_FILE=$TMP/command_history.jsonl
+RESULT_FILE=$RUN/result.txt
+RESPONSE_FILE=$RUN/response.md
+REASONING_RESPONSE_FILE=$RUN/reasoning_response.md
+COMMAND_HISTORY_FILE=$RUN/command_history.jsonl
 RESPONSE_STATE=false
+AUTO_CONTINUE=false
 
 append_to_conversation -r system -c "$(< $SCRIPT_DIR/system.md)"
 
 zle -N natural_language_widget
 bindkey '^M' natural_language_widget
 bindkey '^J' natural_language_widget
-# 定义 command_not_found_handler 函数
+
 # command_not_found_handler() {
 #     append_to_conversation -r user -c "$*"
 #     handle_conversation
 # }
-# unsetopt cdable_vars
 
 check_conversation() {zle -M "`cat $CONVERSATION_FILE`"}
 zle -N check_conversation
-# 暂时抑制这个功能，因为发现跟划词生成存在冲突。
-# 以及M字母同样被上面征用到同一功能。
-# bindkey '^M' check_conversation
 
 back_conversation() {
     sed -i '$ d' $CONVERSATION_FILE 
